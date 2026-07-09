@@ -57,6 +57,33 @@
     background:var(--card); font-size:16px; color:var(--ink);
   }
 
+  .view-toggle{display:flex; gap:6px; padding:6px 16px 2px;}
+  .view-toggle button{
+    flex:1; padding:8px 4px; border:1px solid var(--line); border-radius:10px;
+    background:var(--card); color:var(--ink-soft); font-size:13px; font-weight:600;
+  }
+  .view-toggle button.active{background:var(--accent); border-color:var(--accent); color:#fff;}
+
+  .agenda{padding:6px 16px 4px;}
+  .agenda-day{
+    background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+    padding:10px 12px; margin-bottom:10px;
+  }
+  .agenda-day-head{
+    display:flex; align-items:baseline; gap:6px; font-size:13px; font-weight:700;
+    margin-bottom:8px; color:var(--ink);
+  }
+  .agenda-day-head .dow{color:var(--ink-soft); font-weight:400;}
+  .agenda-row{
+    display:flex; align-items:center; gap:8px; border-left:4px solid var(--c-work);
+    background:var(--paper); border-radius:8px; padding:7px 9px; margin-bottom:5px; font-size:12.5px;
+  }
+  .agenda-row .name{font-weight:700; white-space:nowrap;}
+  .agenda-row .t{white-space:nowrap; color:var(--ink-soft);}
+  .agenda-row .type{white-space:nowrap; font-weight:600;}
+  .agenda-row .note{color:var(--ink-soft); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .agenda-empty{font-size:12px; color:var(--ink-soft); text-align:center; padding:20px 0;}
+
   .cal{padding:8px 10px 4px;}
   .cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:4px;}
   .cal-dow{text-align:center; font-size:11px; color:var(--ink-soft); padding:4px 0;}
@@ -214,22 +241,29 @@
     <div class="m" id="monthLabel">2026年7月</div>
     <button id="nextMonth">›</button>
   </div>
-  <div class="cal">
-    <div class="cal-grid" id="dowRow"></div>
-    <div class="cal-grid" id="calGrid" style="margin-top:4px;"></div>
+  <div class="view-toggle">
+    <button id="viewCalBtn" class="active">📅 月曆</button>
+    <button id="viewListBtn">📋 列表（看時間細節）</button>
   </div>
-  <button class="add-slot-btn" id="applyDefaultBtn" style="margin-top:10px;">🪄 套用預設班表（只補空白日，不覆蓋已排的）</button>
-  <div class="legend">
-    <span><i style="background:var(--c-work)"></i>上班</span>
-    <span><i style="background:var(--c-off)"></i>休假</span>
-    <span><i style="background:var(--c-class)"></i>客戶上課</span>
-    <span><i style="background:var(--c-desk)"></i>顧櫃檯</span>
-    <span><i style="background:var(--c-meal)"></i>吃飯</span>
-    <span><i style="background:var(--c-annual)"></i>特休</span>
-    <span><i style="background:var(--c-comp)"></i>補休</span>
-    <span><i style="background:var(--c-note)"></i>備註</span>
-    <span><i style="background:var(--warn)"></i>當日尚無人顧櫃檯</span>
+  <div id="calWrap">
+    <div class="cal">
+      <div class="cal-grid" id="dowRow"></div>
+      <div class="cal-grid" id="calGrid" style="margin-top:4px;"></div>
+    </div>
+    <button class="add-slot-btn" id="applyDefaultBtn" style="margin:10px 16px 0;">🪄 套用預設班表（只補空白日，不覆蓋已排的）</button>
+    <div class="legend">
+      <span><i style="background:var(--c-work)"></i>上班</span>
+      <span><i style="background:var(--c-off)"></i>休假</span>
+      <span><i style="background:var(--c-class)"></i>客戶上課</span>
+      <span><i style="background:var(--c-desk)"></i>顧櫃檯</span>
+      <span><i style="background:var(--c-meal)"></i>吃飯</span>
+      <span><i style="background:var(--c-annual)"></i>特休</span>
+      <span><i style="background:var(--c-comp)"></i>補休</span>
+      <span><i style="background:var(--c-note)"></i>備註</span>
+      <span><i style="background:var(--warn)"></i>當日尚無人顧櫃檯</span>
+    </div>
   </div>
+  <div class="agenda" id="agendaWrap" style="display:none;"></div>
 </div>
 
 <div id="pageBalance" class="page">
@@ -395,6 +429,7 @@ function init(){
       btn.classList.add('active');
       currentStore = btn.dataset.store;
       renderCalendar();
+      renderAgenda();
       renderBalanceList();
       renderStaffMgmt();
     };
@@ -411,6 +446,8 @@ function init(){
   document.getElementById('nextMonth').onclick = ()=>{ changeMonth(1); };
   document.getElementById('saveSlotBtn').onclick = saveSlot;
   document.getElementById('applyDefaultBtn').onclick = applyDefaultSchedule;
+  document.getElementById('viewCalBtn').onclick = ()=> setScheduleView('cal');
+  document.getElementById('viewListBtn').onclick = ()=> setScheduleView('list');
 
   const dow = document.getElementById('dowRow');
   ["日","一","二","三","四","五","六"].forEach(d=>{
@@ -429,6 +466,7 @@ async function loadAll(){
 
   await loadMonthSchedule();
   renderCalendar();
+  renderAgenda();
   renderBalanceList();
   renderStaffMgmt();
 }
@@ -449,7 +487,7 @@ function changeMonth(delta){
   viewMonth += delta;
   if(viewMonth<0){viewMonth=11; viewYear--;}
   if(viewMonth>11){viewMonth=0; viewYear++;}
-  loadMonthSchedule().then(renderCalendar);
+  loadMonthSchedule().then(()=>{ renderCalendar(); renderAgenda(); });
 }
 
 async function applyDefaultSchedule(){
@@ -481,6 +519,7 @@ async function applyDefaultSchedule(){
   if(error){ toast('套用失敗'); console.error(error); return; }
   await loadMonthSchedule();
   renderCalendar();
+  renderAgenda();
   toast(`已補齊 ${rows.length} 筆班表`);
 }
 
@@ -531,6 +570,57 @@ function renderCalendar(){
 
     cell.onclick = ()=> openDaySheet(iso);
     grid.appendChild(cell);
+  }
+}
+
+let currentView = 'cal';
+
+function setScheduleView(view){
+  currentView = view;
+  document.getElementById('viewCalBtn').classList.toggle('active', view==='cal');
+  document.getElementById('viewListBtn').classList.toggle('active', view==='list');
+  document.getElementById('calWrap').style.display = view==='cal' ? 'block' : 'none';
+  document.getElementById('agendaWrap').style.display = view==='list' ? 'block' : 'none';
+  if(view==='list') renderAgenda();
+}
+
+function renderAgenda(){
+  const wrap = document.getElementById('agendaWrap');
+  if(!wrap || currentView!=='list') return;
+  wrap.innerHTML = '';
+  const daysInMonth = new Date(viewYear, viewMonth+1, 0).getDate();
+  const vs = visibleStaff();
+  let anyDay = false;
+
+  for(let d=1; d<=daysInMonth; d++){
+    const iso = `${viewYear}-${String(viewMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const rows = (scheduleMap[iso]||[]).filter(r=> vs.some(s=>s.id===r.staff_id));
+    if(rows.length===0) continue;
+    anyDay = true;
+
+    const dow = ["日","一","二","三","四","五","六"][new Date(iso+'T00:00:00').getDay()];
+    const dayBlock = document.createElement('div'); dayBlock.className='agenda-day';
+    dayBlock.innerHTML = `<div class="agenda-day-head">${viewMonth+1}月${d}日 <span class="dow">星期${dow}</span></div>`;
+
+    rows.sort((a,b)=> a.start_time.localeCompare(b.start_time)).forEach(r=>{
+      const staff = vs.find(s=>s.id===r.staff_id);
+      const row = document.createElement('div'); row.className='agenda-row';
+      row.style.borderLeftColor = typeColor[r.type] || '#ccc';
+      row.innerHTML = `
+        <span class="name">${staff ? staff.name : ''}</span>
+        <span class="t">${r.start_time.slice(0,5)}–${r.end_time.slice(0,5)}</span>
+        <span class="type">${r.type}</span>
+        <span class="note">${r.note ? r.note : ''}</span>
+      `;
+      dayBlock.appendChild(row);
+    });
+
+    dayBlock.onclick = ()=> openDaySheet(iso);
+    wrap.appendChild(dayBlock);
+  }
+
+  if(!anyDay){
+    wrap.innerHTML = '<div class="agenda-empty">這個月還沒有排班紀錄</div>';
   }
 }
 
@@ -644,6 +734,7 @@ async function saveSlot(){
   closeSheet('slotSheet');
   await loadMonthSchedule();
   renderCalendar();
+  renderAgenda();
   openDaySheet(editingSlot.date);
   if(type==='特休' || type==='補休') renderBalanceList();
   toast('已儲存');
@@ -655,6 +746,7 @@ async function deleteSlot(id, iso){
   if(error){ toast('刪除失敗'); console.error(error); return; }
   await loadMonthSchedule();
   renderCalendar();
+  renderAgenda();
   openDaySheet(iso);
   if(row && (row.type==='特休'||row.type==='補休')) renderBalanceList();
   toast('已刪除');
@@ -763,6 +855,7 @@ async function reloadStaffAndRefresh(){
   const {data: archData} = await sb.from('staff').select('*').eq('active', false).order('sort_order');
   archivedStaff = archData || [];
   renderCalendar();
+  renderAgenda();
   renderBalanceList();
   renderStaffMgmt();
 }
