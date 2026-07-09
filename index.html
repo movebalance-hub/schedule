@@ -148,6 +148,12 @@
     width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:8px;
     font-size:14px; background:#fff; font-family:inherit;
   }
+  .weekday-chips{display:flex; gap:4px;}
+  .weekday-chips button{
+    flex:1; padding:8px 0; border:1px solid var(--line); border-radius:8px;
+    background:#fff; font-size:13px; color:var(--ink-soft); font-family:inherit;
+  }
+  .weekday-chips button.active{background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700;}
   .form-actions{display:flex; gap:8px; margin-top:12px;}
   .form-actions button{
     flex:1; padding:11px; border-radius:10px; border:none; font-size:14px; font-weight:700;
@@ -197,6 +203,7 @@
     <div class="cal-grid" id="dowRow"></div>
     <div class="cal-grid" id="calGrid" style="margin-top:4px;"></div>
   </div>
+  <button class="add-slot-btn" id="applyDefaultBtn" style="margin-top:10px;">🪄 套用預設班表（只補空白日，不覆蓋已排的）</button>
   <div class="legend">
     <span><i style="background:var(--c-work)"></i>上班</span>
     <span><i style="background:var(--c-off)"></i>休假</span>
@@ -297,6 +304,26 @@
         <label>排序（數字小的排前面，選填）</label>
         <input type="number" id="sfSort" placeholder="0">
       </div>
+      <div class="full">
+        <label>固定休假日（可複選，排班時會自動排休）</label>
+        <div class="weekday-chips" id="sfOffDays">
+          <button type="button" data-day="0">日</button>
+          <button type="button" data-day="1">一</button>
+          <button type="button" data-day="2">二</button>
+          <button type="button" data-day="3">三</button>
+          <button type="button" data-day="4">四</button>
+          <button type="button" data-day="5">五</button>
+          <button type="button" data-day="6">六</button>
+        </div>
+      </div>
+      <div>
+        <label>預設上班開始</label>
+        <input type="time" id="sfDefaultStart" value="13:00">
+      </div>
+      <div>
+        <label>預設上班結束</label>
+        <input type="time" id="sfDefaultEnd" value="22:00">
+      </div>
     </div>
     <div class="form-actions">
       <button class="btn-cancel" onclick="closeSheet('staffSheet')">取消</button>
@@ -367,6 +394,7 @@ function init(){
   document.getElementById('prevMonth').onclick = ()=>{ changeMonth(-1); };
   document.getElementById('nextMonth').onclick = ()=>{ changeMonth(1); };
   document.getElementById('saveSlotBtn').onclick = saveSlot;
+  document.getElementById('applyDefaultBtn').onclick = applyDefaultSchedule;
 
   const dow = document.getElementById('dowRow');
   ["日","一","二","三","四","五","六"].forEach(d=>{
@@ -406,6 +434,38 @@ function changeMonth(delta){
   if(viewMonth<0){viewMonth=11; viewYear--;}
   if(viewMonth>11){viewMonth=0; viewYear++;}
   loadMonthSchedule().then(renderCalendar);
+}
+
+async function applyDefaultSchedule(){
+  const vs = visibleStaff();
+  if(vs.length===0){ toast('目前分店沒有員工'); return; }
+  const daysInMonth = new Date(viewYear, viewMonth+1, 0).getDate();
+  const rows = [];
+
+  vs.forEach(staff=>{
+    const offDays = staff.default_off_days || [];
+    const dStart = (staff.default_start || '13:00').slice(0,5);
+    const dEnd = (staff.default_end || '22:00').slice(0,5);
+    for(let d=1; d<=daysInMonth; d++){
+      const iso = `${viewYear}-${String(viewMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const already = (scheduleMap[iso]||[]).some(r=>r.staff_id===staff.id);
+      if(already) continue; // 該員工當天已有排班就跳過，不覆蓋
+      const dow = new Date(iso+'T00:00:00').getDay();
+      if(offDays.includes(dow)){
+        rows.push({staff_id:staff.id, date:iso, start_time:'00:00', end_time:'23:59', type:'休假', note:null});
+      } else {
+        rows.push({staff_id:staff.id, date:iso, start_time:dStart, end_time:dEnd, type:'上班', note:null});
+      }
+    }
+  });
+
+  if(rows.length===0){ toast('這個月每天都已經排好了，沒有空白日'); return; }
+
+  const {error} = await sb.from('schedule').insert(rows);
+  if(error){ toast('套用失敗'); console.error(error); return; }
+  await loadMonthSchedule();
+  renderCalendar();
+  toast(`已補齊 ${rows.length} 筆班表`);
 }
 
 function visibleStaff(){
@@ -592,23 +652,37 @@ function openStaffSheet(staff){
   document.getElementById('sfLocation').value = staff ? staff.location : (currentStore!=='全部'? currentStore : '南區');
   document.getElementById('sfRole').value = staff ? staff.role : '正職';
   document.getElementById('sfSort').value = staff ? staff.sort_order : (staffList.length+1);
+  document.getElementById('sfDefaultStart').value = staff && staff.default_start ? staff.default_start.slice(0,5) : '13:00';
+  document.getElementById('sfDefaultEnd').value = staff && staff.default_end ? staff.default_end.slice(0,5) : '22:00';
+  const offDays = (staff && staff.default_off_days) ? staff.default_off_days : [];
+  document.querySelectorAll('#sfOffDays button').forEach(btn=>{
+    btn.classList.toggle('active', offDays.includes(parseInt(btn.dataset.day)));
+  });
   document.getElementById('staffSheet').classList.add('show');
 }
+
+document.querySelectorAll('#sfOffDays button').forEach(btn=>{
+  btn.onclick = ()=> btn.classList.toggle('active');
+});
 
 async function saveStaffForm(){
   const name = document.getElementById('sfName').value.trim();
   const location = document.getElementById('sfLocation').value;
   const role = document.getElementById('sfRole').value;
   const sort_order = parseInt(document.getElementById('sfSort').value) || 0;
+  const default_start = document.getElementById('sfDefaultStart').value || '13:00';
+  const default_end = document.getElementById('sfDefaultEnd').value || '22:00';
+  const default_off_days = Array.from(document.querySelectorAll('#sfOffDays button.active')).map(b=>parseInt(b.dataset.day));
   if(!name){ toast('請輸入姓名'); return; }
 
+  const payload = {name, location, role, sort_order, default_start, default_end, default_off_days};
   let error;
   if(editingStaffId){
-    ({error} = await sb.from('staff').update({name, location, role, sort_order}).eq('id', editingStaffId));
+    ({error} = await sb.from('staff').update(payload).eq('id', editingStaffId));
   } else {
-    ({error} = await sb.from('staff').insert({name, location, role, sort_order, active:true}));
+    ({error} = await sb.from('staff').insert({...payload, active:true}));
   }
-  if(error){ toast('儲存失敗'); console.error(error); return; }
+  if(error){ toast('儲存失敗，可能是資料庫還沒加欄位，請看下方說明'); console.error(error); return; }
 
   closeSheet('staffSheet');
   await reloadStaffAndRefresh();
