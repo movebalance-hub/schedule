@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>永衡運動 班表</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --ink:#1c2333;
+    --ink-soft:#5b6478;
+    --paper:#f6f7fb;
+    --card:#ffffff;
+    --line:#e4e7ef;
+    --accent:#2f6f5e;      /* 深松綠：品牌主色 */
+    --accent-soft:#e4f0ec;
+    --warn:#b5544a;
+    --radius:14px;
+
+    --c-work:#3d4b66;      /* 上班 */
+    --c-off:#c7cbd6;       /* 休假 */
+    --c-class:#3b6fa0;     /* 客戶上課 */
+    --c-desk:#7a5ea8;      /* 顧櫃檯 */
+    --c-meal:#c98a3e;      /* 吃飯 */
+    --c-annual:#2f8f5b;    /* 特休 */
+    --c-comp:#1f9e9e;      /* 補休 */
+    --c-note:#b5544a;      /* 備註 */
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang TC","Noto Sans TC",sans-serif;
+    padding-bottom:70px;
+  }
+  header{
+    position:sticky; top:0; z-index:20;
+    background:var(--ink); color:#fff;
+    padding:14px 16px 10px;
+  }
+  header h1{margin:0; font-size:17px; font-weight:700; letter-spacing:.5px;}
+  header .sub{font-size:12px; opacity:.65; margin-top:2px;}
+
+  .store-tabs{display:flex; gap:6px; margin-top:10px;}
+  .store-tabs button{
+    flex:1; padding:8px 4px; border:none; border-radius:10px;
+    background:rgba(255,255,255,.1); color:#fff; font-size:13px; font-weight:600;
+  }
+  .store-tabs button.active{background:var(--accent);}
+
+  .month-nav{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:12px 16px 4px;
+  }
+  .month-nav .m{font-size:16px; font-weight:700;}
+  .month-nav button{
+    width:34px; height:34px; border-radius:50%; border:1px solid var(--line);
+    background:var(--card); font-size:16px; color:var(--ink);
+  }
+
+  .cal{padding:8px 10px 4px;}
+  .cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:4px;}
+  .cal-dow{text-align:center; font-size:11px; color:var(--ink-soft); padding:4px 0;}
+  .cal-cell{
+    aspect-ratio:1/1.05; background:var(--card); border-radius:10px;
+    border:1px solid var(--line); padding:4px; display:flex; flex-direction:column;
+    align-items:flex-start; position:relative;
+  }
+  .cal-cell.empty{background:transparent; border:none;}
+  .cal-cell.today{border-color:var(--accent); border-width:2px;}
+  .cal-date{font-size:12px; font-weight:600; color:var(--ink-soft);}
+  .cal-cell.today .cal-date{color:var(--accent);}
+  .dots{display:flex; flex-wrap:wrap; gap:2px; margin-top:auto;}
+  .dot{width:6px; height:6px; border-radius:50%;}
+  .cal-empty-flag{
+    position:absolute; top:3px; right:4px; width:6px; height:6px; border-radius:50%;
+    background:var(--warn);
+  }
+
+  .legend{display:flex; flex-wrap:wrap; gap:8px 12px; padding:10px 16px 4px; font-size:11px; color:var(--ink-soft);}
+  .legend span{display:inline-flex; align-items:center; gap:4px;}
+  .legend i{width:8px; height:8px; border-radius:50%; display:inline-block;}
+
+  .tabbar{
+    position:fixed; bottom:0; left:0; right:0; z-index:30;
+    display:flex; background:#fff; border-top:1px solid var(--line);
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  .tabbar button{
+    flex:1; padding:10px 0 8px; border:none; background:none;
+    font-size:12px; color:var(--ink-soft); font-weight:600;
+  }
+  .tabbar button.active{color:var(--accent);}
+
+  .page{display:none; padding:4px 16px 20px;}
+  .page.active{display:block;}
+
+  .staff-card{
+    background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+    padding:12px 14px; margin-bottom:12px;
+  }
+  .staff-card h3{margin:0 0 8px; font-size:14px;}
+  .staff-card h3 .role{font-size:11px; color:var(--ink-soft); font-weight:400; margin-left:6px;}
+  .bal-row{display:flex; gap:10px;}
+  .bal-field{flex:1;}
+  .bal-field label{font-size:11px; color:var(--ink-soft); display:block; margin-bottom:4px;}
+  .bal-field input{
+    width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:8px;
+    font-size:14px; background:var(--paper);
+  }
+  .bal-field.annual input{color:var(--c-annual);}
+  .bal-field.comp input{color:var(--c-comp);}
+  .save-hint{font-size:11px; color:var(--ink-soft); margin-top:6px;}
+
+  /* modal */
+  .overlay{
+    position:fixed; inset:0; background:rgba(20,24,35,.5); z-index:50;
+    display:none; align-items:flex-end;
+  }
+  .overlay.show{display:flex;}
+  .sheet{
+    background:var(--paper); width:100%; max-height:88vh; overflow-y:auto;
+    border-radius:18px 18px 0 0; padding:16px 16px calc(20px + env(safe-area-inset-bottom));
+  }
+  .sheet-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;}
+  .sheet-head h2{font-size:16px; margin:0;}
+  .sheet-head button{border:none; background:none; font-size:22px; color:var(--ink-soft); line-height:1;}
+
+  .day-staff-block{margin-bottom:14px;}
+  .day-staff-block h4{font-size:13px; margin:0 0 6px; color:var(--ink-soft);}
+  .slot{
+    display:flex; align-items:center; gap:8px; background:var(--card);
+    border:1px solid var(--line); border-left:4px solid var(--c-work);
+    border-radius:10px; padding:8px 10px; margin-bottom:6px; font-size:13px;
+  }
+  .slot .t{font-weight:600; white-space:nowrap;}
+  .slot .type{color:var(--ink-soft); font-size:12px;}
+  .slot .note{color:var(--ink-soft); font-size:12px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .slot button{border:none; background:none; color:var(--ink-soft); font-size:16px; padding:0 2px;}
+  .add-slot-btn{
+    width:100%; padding:9px; border:1px dashed var(--accent); color:var(--accent);
+    background:none; border-radius:10px; font-size:13px; font-weight:600; margin-top:2px;
+  }
+
+  .form-grid{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px;}
+  .form-grid .full{grid-column:1/-1;}
+  .form-grid label{font-size:11px; color:var(--ink-soft); display:block; margin-bottom:3px;}
+  .form-grid select, .form-grid input, .form-grid textarea{
+    width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:8px;
+    font-size:14px; background:#fff; font-family:inherit;
+  }
+  .form-actions{display:flex; gap:8px; margin-top:12px;}
+  .form-actions button{
+    flex:1; padding:11px; border-radius:10px; border:none; font-size:14px; font-weight:700;
+  }
+  .btn-primary{background:var(--accent); color:#fff;}
+  .btn-cancel{background:var(--line); color:var(--ink);}
+
+  .toast{
+    position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
+    background:var(--ink); color:#fff; padding:9px 16px; border-radius:20px;
+    font-size:13px; z-index:60; opacity:0; transition:opacity .2s; pointer-events:none;
+  }
+  .toast.show{opacity:1;}
+
+  .config-box{
+    margin:16px; padding:16px; background:#fff8ec; border:1px solid #e8d9b5;
+    border-radius:12px; font-size:13px; line-height:1.6;
+  }
+  .config-box code{background:#fff; padding:1px 5px; border-radius:4px;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>永衡運動｜班表</h1>
+  <div class="sub" id="headerSub">載入中…</div>
+  <div class="store-tabs" id="storeTabs">
+    <button data-store="全部" class="active">全部</button>
+    <button data-store="南區">南區</button>
+    <button data-store="北屯">北屯</button>
+  </div>
+</header>
+
+<div id="configBox" class="config-box" style="display:none">
+  尚未連接資料庫。請打開這個檔案，找到 <code>SUPABASE_URL</code> 與 <code>SUPABASE_ANON_KEY</code>，
+  換成你 Supabase 專案的網址與 anon public key（在 Supabase 後台 Project Settings → API 可以找到），
+  存檔後重新整理即可。
+</div>
+
+<div id="pageSchedule" class="page active">
+  <div class="month-nav">
+    <button id="prevMonth">‹</button>
+    <div class="m" id="monthLabel">2026年7月</div>
+    <button id="nextMonth">›</button>
+  </div>
+  <div class="cal">
+    <div class="cal-grid" id="dowRow"></div>
+    <div class="cal-grid" id="calGrid" style="margin-top:4px;"></div>
+  </div>
+  <div class="legend">
+    <span><i style="background:var(--c-work)"></i>上班</span>
+    <span><i style="background:var(--c-off)"></i>休假</span>
+    <span><i style="background:var(--c-class)"></i>客戶上課</span>
+    <span><i style="background:var(--c-desk)"></i>顧櫃檯</span>
+    <span><i style="background:var(--c-meal)"></i>吃飯</span>
+    <span><i style="background:var(--c-annual)"></i>特休</span>
+    <span><i style="background:var(--c-comp)"></i>補休</span>
+    <span><i style="background:var(--c-note)"></i>備註</span>
+    <span><i style="background:var(--warn)"></i>當日尚無人顧櫃檯</span>
+  </div>
+</div>
+
+<div id="pageBalance" class="page">
+  <div id="balanceList" style="margin-top:10px;"></div>
+</div>
+
+<div id="pageStaff" class="page">
+  <div id="staffMgmtList" style="margin-top:10px;"></div>
+  <button class="add-slot-btn" style="margin-top:4px;" onclick="openStaffSheet()">＋ 新增員工</button>
+
+  <div style="margin-top:18px;">
+    <div style="font-size:12px; color:var(--ink-soft); margin-bottom:6px;">已封存員工（不會出現在排班中）</div>
+    <div id="archivedList"></div>
+  </div>
+</div>
+
+<div class="tabbar">
+  <button class="active" data-page="pageSchedule">📅 排班</button>
+  <button data-page="pageBalance">⏱ 特休/補休</button>
+  <button data-page="pageStaff">👥 員工</button>
+</div>
+
+<div class="overlay" id="daySheet">
+  <div class="sheet">
+    <div class="sheet-head">
+      <h2 id="dayTitle">7月9日（四）</h2>
+      <button onclick="closeSheet('daySheet')">✕</button>
+    </div>
+    <div id="dayStaffList"></div>
+  </div>
+</div>
+
+<div class="overlay" id="slotSheet">
+  <div class="sheet">
+    <div class="sheet-head">
+      <h2>新增／編輯時段</h2>
+      <button onclick="closeSheet('slotSheet')">✕</button>
+    </div>
+    <div class="form-grid">
+      <div class="full">
+        <label>類型</label>
+        <select id="fType">
+          <option>上班</option><option>休假</option><option>客戶上課</option>
+          <option>顧櫃檯</option><option>吃飯</option><option>特休</option>
+          <option>補休</option><option>備註</option>
+        </select>
+      </div>
+      <div><label>開始時間</label><input type="time" id="fStart" value="09:00"></div>
+      <div><label>結束時間</label><input type="time" id="fEnd" value="18:00"></div>
+      <div class="full"><label>備註（預約提醒、雜事等，選填）</label>
+        <textarea id="fNote" rows="2" placeholder="例如：14:00 王小姐體驗課"></textarea>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn-cancel" onclick="closeSheet('slotSheet')">取消</button>
+      <button class="btn-primary" id="saveSlotBtn">儲存</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="staffSheet">
+  <div class="sheet">
+    <div class="sheet-head">
+      <h2 id="staffSheetTitle">新增員工</h2>
+      <button onclick="closeSheet('staffSheet')">✕</button>
+    </div>
+    <div class="form-grid">
+      <div class="full">
+        <label>姓名</label>
+        <input type="text" id="sfName" placeholder="例如：王小明">
+      </div>
+      <div>
+        <label>分店</label>
+        <select id="sfLocation">
+          <option value="南區">南區</option>
+          <option value="北屯">北屯</option>
+        </select>
+      </div>
+      <div>
+        <label>身份</label>
+        <select id="sfRole">
+          <option value="正職">正職</option>
+          <option value="實習">實習</option>
+        </select>
+      </div>
+      <div class="full">
+        <label>排序（數字小的排前面，選填）</label>
+        <input type="number" id="sfSort" placeholder="0">
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn-cancel" onclick="closeSheet('staffSheet')">取消</button>
+      <button class="btn-primary" id="saveStaffBtn">儲存</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ===================== 設定區：換成你自己的 Supabase 專案 ===================== */
+const SUPABASE_URL = "https://tzavwgovtweszmmchvdg.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR6YXZ3Z292dHdlc3ptbWNodmRnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM1ODM1NTcsImV4cCI6MjA5OTE1OTU1N30.qNGOcilLiitMgcEumqkrPa3Gk9pyEbPiyimgjsQpr1s";
+/* ================================================================= */
+
+let sb = null;
+let staffList = [];
+let scheduleMap = {}; // date -> [schedule rows]
+let currentStore = "全部";
+let viewYear, viewMonth; // month: 0-11
+let activeDayISO = null;
+let editingSlot = null; // {id, staff_id, date} when editing existing
+
+const typeColor = {
+  "上班":"var(--c-work)", "休假":"var(--c-off)", "客戶上課":"var(--c-class)",
+  "顧櫃檯":"var(--c-desk)", "吃飯":"var(--c-meal)", "特休":"var(--c-annual)",
+  "補休":"var(--c-comp)", "備註":"var(--c-note)"
+};
+
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 1600);
+}
+
+function init(){
+  const today = new Date();
+  viewYear = today.getFullYear(); viewMonth = today.getMonth();
+
+  if(!SUPABASE_URL.includes("YOUR-PROJECT")){
+    sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    document.getElementById('headerSub').textContent = "點日期即可排班，全店共用同一份";
+    loadAll();
+  } else {
+    document.getElementById('configBox').style.display = 'block';
+    document.getElementById('headerSub').textContent = "尚未連接資料庫";
+  }
+
+  document.querySelectorAll('.store-tabs button').forEach(btn=>{
+    btn.onclick = ()=>{
+      document.querySelectorAll('.store-tabs button').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      currentStore = btn.dataset.store;
+      renderCalendar();
+      renderBalanceList();
+      renderStaffMgmt();
+    };
+  });
+  document.querySelectorAll('.tabbar button').forEach(btn=>{
+    btn.onclick = ()=>{
+      document.querySelectorAll('.tabbar button').forEach(b=>b.classList.remove('active'));
+      document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(btn.dataset.page).classList.add('active');
+    };
+  });
+  document.getElementById('prevMonth').onclick = ()=>{ changeMonth(-1); };
+  document.getElementById('nextMonth').onclick = ()=>{ changeMonth(1); };
+  document.getElementById('saveSlotBtn').onclick = saveSlot;
+
+  const dow = document.getElementById('dowRow');
+  ["日","一","二","三","四","五","六"].forEach(d=>{
+    const el = document.createElement('div'); el.className='cal-dow'; el.textContent=d;
+    dow.appendChild(el);
+  });
+}
+
+async function loadAll(){
+  const {data: staffData, error: e1} = await sb.from('staff').select('*').eq('active', true).order('sort_order');
+  if(e1){ toast('讀取員工資料失敗'); console.error(e1); return; }
+  staffList = staffData || [];
+
+  const {data: archData} = await sb.from('staff').select('*').eq('active', false).order('sort_order');
+  archivedStaff = archData || [];
+
+  await loadMonthSchedule();
+  renderCalendar();
+  renderBalanceList();
+  renderStaffMgmt();
+}
+
+async function loadMonthSchedule(){
+  const start = new Date(viewYear, viewMonth, 1).toISOString().slice(0,10);
+  const end = new Date(viewYear, viewMonth+1, 0).toISOString().slice(0,10);
+  const {data, error} = await sb.from('schedule').select('*').gte('date', start).lte('date', end);
+  if(error){ toast('讀取班表失敗'); console.error(error); return; }
+  scheduleMap = {};
+  (data||[]).forEach(row=>{
+    if(!scheduleMap[row.date]) scheduleMap[row.date] = [];
+    scheduleMap[row.date].push(row);
+  });
+}
+
+function changeMonth(delta){
+  viewMonth += delta;
+  if(viewMonth<0){viewMonth=11; viewYear--;}
+  if(viewMonth>11){viewMonth=0; viewYear++;}
+  loadMonthSchedule().then(renderCalendar);
+}
+
+function visibleStaff(){
+  if(currentStore==='全部') return staffList;
+  return staffList.filter(s=>s.location===currentStore);
+}
+
+function renderCalendar(){
+  document.getElementById('monthLabel').textContent = `${viewYear}年${viewMonth+1}月`;
+  const grid = document.getElementById('calGrid');
+  grid.innerHTML = '';
+  const firstDow = new Date(viewYear, viewMonth, 1).getDay();
+  const daysInMonth = new Date(viewYear, viewMonth+1, 0).getDate();
+  const todayISO = new Date().toISOString().slice(0,10);
+
+  for(let i=0;i<firstDow;i++){
+    const el = document.createElement('div'); el.className='cal-cell empty';
+    grid.appendChild(el);
+  }
+  const vs = visibleStaff();
+  for(let d=1; d<=daysInMonth; d++){
+    const iso = `${viewYear}-${String(viewMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const cell = document.createElement('div');
+    cell.className = 'cal-cell' + (iso===todayISO ? ' today':'');
+    cell.innerHTML = `<div class="cal-date">${d}</div>`;
+
+    const rows = (scheduleMap[iso]||[]).filter(r=> vs.some(s=>s.id===r.staff_id));
+    const dots = document.createElement('div'); dots.className='dots';
+    const seen = new Set();
+    rows.forEach(r=>{
+      if(seen.has(r.type)) return; seen.add(r.type);
+      const dot = document.createElement('span'); dot.className='dot';
+      dot.style.background = typeColor[r.type] || '#ccc';
+      dots.appendChild(dot);
+    });
+    cell.appendChild(dots);
+
+    // 顧櫃檯人力提醒：當天完全沒有任何「顧櫃檯」時段時提示（僅在該分店有員工時檢查）
+    if(vs.length>0){
+      const hasDesk = rows.some(r=>r.type==='顧櫃檯');
+      const hasAnyWork = rows.length>0;
+      if(hasAnyWork && !hasDesk){
+        const flag = document.createElement('span'); flag.className='cal-empty-flag';
+        cell.appendChild(flag);
+      }
+    }
+
+    cell.onclick = ()=> openDaySheet(iso);
+    grid.appendChild(cell);
+  }
+}
+
+function openDaySheet(iso){
+  activeDayISO = iso;
+  const d = new Date(iso+'T00:00:00');
+  const wk = ["日","一","二","三","四","五","六"][d.getDay()];
+  document.getElementById('dayTitle').textContent = `${d.getMonth()+1}月${d.getDate()}日（${wk}）`;
+
+  const list = document.getElementById('dayStaffList');
+  list.innerHTML = '';
+  const vs = visibleStaff();
+  vs.forEach(staff=>{
+    const block = document.createElement('div'); block.className='day-staff-block';
+    const label = staff.location + ' · ' + staff.role;
+    block.innerHTML = `<h4>${staff.name}　<span style="font-weight:400">${label}</span></h4>`;
+    const slots = (scheduleMap[iso]||[]).filter(r=>r.staff_id===staff.id)
+      .sort((a,b)=> a.start_time.localeCompare(b.start_time));
+    slots.forEach(s=>{
+      const row = document.createElement('div'); row.className='slot';
+      row.style.borderLeftColor = typeColor[s.type] || '#ccc';
+      row.innerHTML = `
+        <span class="t">${s.start_time.slice(0,5)}–${s.end_time.slice(0,5)}</span>
+        <span class="type">${s.type}</span>
+        <span class="note">${s.note? s.note : ''}</span>
+        <button data-id="${s.id}" class="delBtn">🗑</button>
+      `;
+      row.querySelector('.delBtn').onclick = (e)=>{ e.stopPropagation(); deleteSlot(s.id, iso); };
+      block.appendChild(row);
+    });
+    const addBtn = document.createElement('button');
+    addBtn.className='add-slot-btn'; addBtn.textContent='＋ 新增時段';
+    addBtn.onclick = ()=> openSlotSheet(staff, iso);
+    block.appendChild(addBtn);
+    list.appendChild(block);
+  });
+
+  document.getElementById('daySheet').classList.add('show');
+}
+
+function openSlotSheet(staff, iso){
+  editingSlot = {staff_id: staff.id, date: iso};
+  document.getElementById('fType').value = '上班';
+  document.getElementById('fStart').value = '09:00';
+  document.getElementById('fEnd').value = '18:00';
+  document.getElementById('fNote').value = '';
+  document.getElementById('slotSheet').classList.add('show');
+}
+
+async function saveSlot(){
+  const type = document.getElementById('fType').value;
+  const start = document.getElementById('fStart').value;
+  const end = document.getElementById('fEnd').value;
+  const note = document.getElementById('fNote').value.trim();
+  if(start >= end){ toast('結束時間要晚於開始時間'); return; }
+
+  const {error} = await sb.from('schedule').insert({
+    staff_id: editingSlot.staff_id,
+    date: editingSlot.date,
+    start_time: start,
+    end_time: end,
+    type, note
+  });
+  if(error){ toast('儲存失敗'); console.error(error); return; }
+
+  closeSheet('slotSheet');
+  await loadMonthSchedule();
+  renderCalendar();
+  openDaySheet(editingSlot.date);
+  if(type==='特休' || type==='補休') renderBalanceList();
+  toast('已儲存');
+}
+
+async function deleteSlot(id, iso){
+  const row = (scheduleMap[iso]||[]).find(r=>r.id===id);
+  const {error} = await sb.from('schedule').delete().eq('id', id);
+  if(error){ toast('刪除失敗'); console.error(error); return; }
+  await loadMonthSchedule();
+  renderCalendar();
+  openDaySheet(iso);
+  if(row && (row.type==='特休'||row.type==='補休')) renderBalanceList();
+  toast('已刪除');
+}
+
+function closeSheet(id){
+  document.getElementById(id).classList.remove('show');
+}
+
+async function renderBalanceList(){
+  if(!sb) return;
+  const {data, error} = await sb.from('leave_balance').select('*');
+  if(error){ console.error(error); return; }
+  const balMap = {};
+  (data||[]).forEach(r=> balMap[r.staff_id] = r);
+
+  const list = document.getElementById('balanceList');
+  list.innerHTML = '';
+  visibleStaff().forEach(staff=>{
+    const bal = balMap[staff.id] || {annual_remaining:0, comp_remaining:0};
+    const card = document.createElement('div'); card.className='staff-card';
+    card.innerHTML = `
+      <h3>${staff.name}<span class="role">${staff.location}・${staff.role}</span></h3>
+      <div class="bal-row">
+        <div class="bal-field annual">
+          <label>特休剩餘（小時）</label>
+          <input type="number" step="0.5" value="${bal.annual_remaining}" data-staff="${staff.id}" data-field="annual_remaining">
+        </div>
+        <div class="bal-field comp">
+          <label>補休剩餘（小時）</label>
+          <input type="number" step="0.5" value="${bal.comp_remaining}" data-staff="${staff.id}" data-field="comp_remaining">
+        </div>
+      </div>
+      <div class="save-hint">修改後按 Enter 或移開游標自動儲存；排班表中安排「特休」或「補休」時段會自動從這裡扣除</div>
+    `;
+    card.querySelectorAll('input').forEach(inp=>{
+      inp.onchange = async ()=>{
+        const payload = {staff_id: inp.dataset.staff};
+        payload[inp.dataset.field] = parseFloat(inp.value)||0;
+        const {error} = await sb.from('leave_balance').upsert(payload, {onConflict:'staff_id'});
+        if(error){ toast('儲存失敗'); console.error(error); return; }
+        toast('已更新');
+      };
+    });
+    list.appendChild(card);
+  });
+}
+
+let editingStaffId = null;
+let archivedStaff = [];
+
+function openStaffSheet(staff){
+  editingStaffId = staff ? staff.id : null;
+  document.getElementById('staffSheetTitle').textContent = staff ? '編輯員工' : '新增員工';
+  document.getElementById('sfName').value = staff ? staff.name : '';
+  document.getElementById('sfLocation').value = staff ? staff.location : (currentStore!=='全部'? currentStore : '南區');
+  document.getElementById('sfRole').value = staff ? staff.role : '正職';
+  document.getElementById('sfSort').value = staff ? staff.sort_order : (staffList.length+1);
+  document.getElementById('staffSheet').classList.add('show');
+}
+
+async function saveStaffForm(){
+  const name = document.getElementById('sfName').value.trim();
+  const location = document.getElementById('sfLocation').value;
+  const role = document.getElementById('sfRole').value;
+  const sort_order = parseInt(document.getElementById('sfSort').value) || 0;
+  if(!name){ toast('請輸入姓名'); return; }
+
+  let error;
+  if(editingStaffId){
+    ({error} = await sb.from('staff').update({name, location, role, sort_order}).eq('id', editingStaffId));
+  } else {
+    ({error} = await sb.from('staff').insert({name, location, role, sort_order, active:true}));
+  }
+  if(error){ toast('儲存失敗'); console.error(error); return; }
+
+  closeSheet('staffSheet');
+  await reloadStaffAndRefresh();
+  toast('已儲存');
+}
+
+async function archiveStaff(id, archive){
+  const {error} = await sb.from('staff').update({active: !archive}).eq('id', id);
+  if(error){ toast('操作失敗'); console.error(error); return; }
+  await reloadStaffAndRefresh();
+  toast(archive ? '已恢復' : '已封存');
+}
+
+async function reloadStaffAndRefresh(){
+  const {data: activeData} = await sb.from('staff').select('*').eq('active', true).order('sort_order');
+  staffList = activeData || [];
+  const {data: archData} = await sb.from('staff').select('*').eq('active', false).order('sort_order');
+  archivedStaff = archData || [];
+  renderCalendar();
+  renderBalanceList();
+  renderStaffMgmt();
+}
+
+function renderStaffMgmt(){
+  const list = document.getElementById('staffMgmtList');
+  if(!list) return;
+  list.innerHTML = '';
+  visibleStaff().forEach(staff=>{
+    const card = document.createElement('div'); card.className='staff-card';
+    card.innerHTML = `
+      <h3>${staff.name}<span class="role">${staff.location}・${staff.role}</span></h3>
+      <div class="form-actions" style="margin-top:2px;">
+        <button class="btn-cancel" data-act="edit">編輯</button>
+        <button class="btn-cancel" data-act="archive" style="color:var(--warn)">封存</button>
+      </div>
+    `;
+    card.querySelector('[data-act="edit"]').onclick = ()=> openStaffSheet(staff);
+    card.querySelector('[data-act="archive"]').onclick = ()=> archiveStaff(staff.id, false);
+    list.appendChild(card);
+  });
+
+  const archList = document.getElementById('archivedList');
+  archList.innerHTML = '';
+  const archVisible = currentStore==='全部' ? archivedStaff : archivedStaff.filter(s=>s.location===currentStore);
+  if(archVisible.length===0){
+    archList.innerHTML = '<div style="font-size:12px; color:var(--ink-soft);">目前沒有封存的員工</div>';
+  }
+  archVisible.forEach(staff=>{
+    const card = document.createElement('div'); card.className='staff-card';
+    card.innerHTML = `
+      <h3>${staff.name}<span class="role">${staff.location}・${staff.role}</span></h3>
+      <div class="form-actions" style="margin-top:2px;">
+        <button class="btn-primary" data-act="restore">恢復</button>
+      </div>
+    `;
+    card.querySelector('[data-act="restore"]').onclick = ()=> archiveStaff(staff.id, true);
+    archList.appendChild(card);
+  });
+}
+
+document.getElementById('saveStaffBtn').onclick = saveStaffForm;
+
+init();
+</script>
+</body>
+</html>
