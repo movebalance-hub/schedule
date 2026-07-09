@@ -410,6 +410,10 @@ function toast(msg){
   setTimeout(()=>t.classList.remove('show'), 1600);
 }
 
+function localISO(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
 function init(){
   const today = new Date();
   viewYear = today.getFullYear(); viewMonth = today.getMonth();
@@ -472,8 +476,8 @@ async function loadAll(){
 }
 
 async function loadMonthSchedule(){
-  const start = new Date(viewYear, viewMonth, 1).toISOString().slice(0,10);
-  const end = new Date(viewYear, viewMonth+1, 0).toISOString().slice(0,10);
+  const start = localISO(new Date(viewYear, viewMonth, 1));
+  const end = localISO(new Date(viewYear, viewMonth+1, 0));
   const {data, error} = await sb.from('schedule').select('*').gte('date', start).lte('date', end);
   if(error){ toast('讀取班表失敗'); console.error(error); return; }
   scheduleMap = {};
@@ -534,7 +538,7 @@ function renderCalendar(){
   grid.innerHTML = '';
   const firstDow = new Date(viewYear, viewMonth, 1).getDay();
   const daysInMonth = new Date(viewYear, viewMonth+1, 0).getDate();
-  const todayISO = new Date().toISOString().slice(0,10);
+  const todayISO = localISO(new Date());
 
   for(let i=0;i<firstDow;i++){
     const el = document.createElement('div'); el.className='cal-cell empty';
