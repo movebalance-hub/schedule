@@ -69,11 +69,16 @@
     background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
     padding:10px 12px; margin-bottom:10px;
   }
+  .agenda-day.today{border-color:var(--accent); border-width:2px; background:var(--accent-soft);}
   .agenda-day-head{
     display:flex; align-items:baseline; gap:6px; font-size:13px; font-weight:700;
     margin-bottom:8px; color:var(--ink);
   }
   .agenda-day-head .dow{color:var(--ink-soft); font-weight:400;}
+  .agenda-day-head .today-badge{
+    background:var(--accent); color:#fff; font-size:10px; font-weight:700;
+    padding:2px 7px; border-radius:20px; margin-left:auto;
+  }
   .agenda-row{
     display:flex; align-items:center; gap:8px; border-left:4px solid var(--c-work);
     background:var(--paper); border-radius:8px; padding:7px 9px; margin-bottom:5px; font-size:12.5px;
@@ -312,8 +317,8 @@
           <option>補休</option><option>備註</option>
         </select>
       </div>
-      <div><label>開始時間</label><input type="time" id="fStart" value="09:00"></div>
-      <div><label>結束時間</label><input type="time" id="fEnd" value="18:00"></div>
+      <div><label>開始時間</label><input type="time" id="fStart" value="13:00" step="900"></div>
+      <div><label>結束時間</label><input type="time" id="fEnd" value="18:00" step="900"></div>
       <div class="full"><label>備註（預約提醒、雜事等，選填）</label>
         <textarea id="fNote" rows="2" placeholder="例如：14:00 王小姐體驗課"></textarea>
       </div>
@@ -511,6 +516,9 @@ async function applyDefaultSchedule(){
       const dow = new Date(iso+'T00:00:00').getDay();
       if(offDays.includes(dow)){
         rows.push({staff_id:staff.id, date:iso, start_time:'00:00', end_time:'23:59', type:'休假', note:null});
+      } else if(dow === 0){
+        // 週日固定營業時間 13:00–18:00
+        rows.push({staff_id:staff.id, date:iso, start_time:'13:00', end_time:'18:00', type:'上班', note:null});
       } else {
         rows.push({staff_id:staff.id, date:iso, start_time:dStart, end_time:dEnd, type:'上班', note:null});
       }
@@ -594,6 +602,7 @@ function renderAgenda(){
   wrap.innerHTML = '';
   const daysInMonth = new Date(viewYear, viewMonth+1, 0).getDate();
   const vs = visibleStaff();
+  const todayISO = localISO(new Date());
   let anyDay = false;
 
   for(let d=1; d<=daysInMonth; d++){
@@ -603,8 +612,9 @@ function renderAgenda(){
     anyDay = true;
 
     const dow = ["日","一","二","三","四","五","六"][new Date(iso+'T00:00:00').getDay()];
-    const dayBlock = document.createElement('div'); dayBlock.className='agenda-day';
-    dayBlock.innerHTML = `<div class="agenda-day-head">${viewMonth+1}月${d}日 <span class="dow">星期${dow}</span></div>`;
+    const dayBlock = document.createElement('div');
+    dayBlock.className = 'agenda-day' + (iso===todayISO ? ' today' : '');
+    dayBlock.innerHTML = `<div class="agenda-day-head">${viewMonth+1}月${d}日 <span class="dow">星期${dow}</span>${iso===todayISO ? '<span class="today-badge">今天</span>' : ''}</div>`;
 
     rows.sort((a,b)=> a.start_time.localeCompare(b.start_time)).forEach(r=>{
       const staff = vs.find(s=>s.id===r.staff_id);
@@ -652,8 +662,12 @@ function openDaySheet(iso){
         <span class="t">${s.start_time.slice(0,5)}–${s.end_time.slice(0,5)}</span>
         <span class="type">${s.type}</span>
         <span class="note">${s.note? s.note : ''}</span>
+        <button data-id="${s.id}" class="editBtn">✏️</button>
         <button data-id="${s.id}" class="delBtn">🗑</button>
       `;
+      row.querySelector('.editBtn').onclick = (e)=>{ e.stopPropagation(); openSlotSheet(staff, iso, {
+        id: s.id, type: s.type, start: s.start_time.slice(0,5), end: s.end_time.slice(0,5), note: s.note || ''
+      }); };
       row.querySelector('.delBtn').onclick = (e)=>{ e.stopPropagation(); deleteSlot(s.id, iso); };
       block.appendChild(row);
     });
@@ -711,11 +725,19 @@ function renderCoverageBar(iso){
 
 function openSlotSheet(staff, iso, preset){
   preset = preset || {};
-  editingSlot = {staff_id: staff.id, date: iso};
+  editingSlot = {staff_id: staff.id, date: iso, id: preset.id || null};
+
+  let defStart = preset.start, defEnd = preset.end;
+  if(!defStart || !defEnd){
+    const isSunday = new Date(iso+'T00:00:00').getDay() === 0;
+    defStart = '13:00';
+    defEnd = isSunday ? '18:00' : '22:00';
+  }
+
   document.getElementById('fType').value = preset.type || '上班';
-  document.getElementById('fStart').value = preset.start || '09:00';
-  document.getElementById('fEnd').value = preset.end || '18:00';
-  document.getElementById('fNote').value = '';
+  document.getElementById('fStart').value = defStart;
+  document.getElementById('fEnd').value = defEnd;
+  document.getElementById('fNote').value = preset.note || '';
   document.getElementById('slotSheet').classList.add('show');
 }
 
@@ -726,13 +748,18 @@ async function saveSlot(){
   const note = document.getElementById('fNote').value.trim();
   if(start >= end){ toast('結束時間要晚於開始時間'); return; }
 
-  const {error} = await sb.from('schedule').insert({
-    staff_id: editingSlot.staff_id,
-    date: editingSlot.date,
-    start_time: start,
-    end_time: end,
-    type, note
-  });
+  let error;
+  if(editingSlot.id){
+    ({error} = await sb.from('schedule').update({start_time:start, end_time:end, type, note}).eq('id', editingSlot.id));
+  } else {
+    ({error} = await sb.from('schedule').insert({
+      staff_id: editingSlot.staff_id,
+      date: editingSlot.date,
+      start_time: start,
+      end_time: end,
+      type, note
+    }));
+  }
   if(error){ toast('儲存失敗'); console.error(error); return; }
 
   closeSheet('slotSheet');
