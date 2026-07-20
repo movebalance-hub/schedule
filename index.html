@@ -798,7 +798,7 @@ async function saveSlot(){
   renderCalendar();
   renderAgenda();
   openDaySheet(editingSlot.date);
-  if(type==='特休' || type==='補休') renderBalanceList();
+  if(type==='特休' || type==='補休' || type==='加班') renderBalanceList();
   toast('已儲存');
 }
 
@@ -810,7 +810,7 @@ async function deleteSlot(id, iso){
   renderCalendar();
   renderAgenda();
   openDaySheet(iso);
-  if(row && (row.type==='特休'||row.type==='補休')) renderBalanceList();
+  if(row && (row.type==='特休'||row.type==='補休'||row.type==='加班')) renderBalanceList();
   toast('已刪除');
 }
 
@@ -842,7 +842,7 @@ async function renderBalanceList(){
           <input type="number" step="0.5" value="${bal.comp_remaining}" data-staff="${staff.id}" data-field="comp_remaining">
         </div>
       </div>
-      <div class="save-hint">修改後按 Enter 或移開游標自動儲存；排班表中安排「特休」或「補休」時段會自動從這裡扣除</div>
+      <div class="save-hint">修改後按 Enter 或移開游標自動儲存；排班表中排「特休」或「補休」會自動從這裡扣除，排「加班」則會自動加進補休剩餘時數</div>
     `;
     card.querySelectorAll('input').forEach(inp=>{
       inp.onchange = async ()=>{
