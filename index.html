@@ -25,6 +25,7 @@
     --c-annual:#2f8f5b;    /* 特休 */
     --c-comp:#1f9e9e;      /* 補休 */
     --c-note:#b5544a;      /* 備註 */
+    --c-ot:#a8672f;        /* 加班 */
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   body{
@@ -201,6 +202,12 @@
     background:#fff; font-size:13px; color:var(--ink-soft); font-family:inherit;
   }
   .weekday-chips button.active{background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700;}
+  .time-select{display:flex; align-items:center; gap:4px;}
+  .time-select select{
+    flex:1; padding:8px 4px; border:1px solid var(--line); border-radius:8px;
+    font-size:14px; background:#fff; font-family:inherit; text-align:center;
+  }
+  .time-select span{color:var(--ink-soft); font-weight:700;}
   .form-actions{display:flex; gap:8px; margin-top:12px;}
   .form-actions button{
     flex:1; padding:11px; border-radius:10px; border:none; font-size:14px; font-weight:700;
@@ -265,6 +272,7 @@
       <span><i style="background:var(--c-annual)"></i>特休</span>
       <span><i style="background:var(--c-comp)"></i>補休</span>
       <span><i style="background:var(--c-note)"></i>備註</span>
+      <span><i style="background:var(--c-ot)"></i>加班</span>
       <span><i style="background:var(--warn)"></i>當日尚無人顧櫃檯</span>
     </div>
   </div>
@@ -314,11 +322,11 @@
         <select id="fType">
           <option>上班</option><option>休假</option><option>客戶上課</option>
           <option>顧櫃檯</option><option>吃飯</option><option>特休</option>
-          <option>補休</option><option>備註</option>
+          <option>補休</option><option>備註</option><option>加班</option>
         </select>
       </div>
-      <div><label>開始時間</label><input type="time" id="fStart" value="13:00" step="900"></div>
-      <div><label>結束時間</label><input type="time" id="fEnd" value="18:00" step="900"></div>
+      <div><label>開始時間</label><div class="time-select" id="fStart_wrap"></div></div>
+      <div><label>結束時間</label><div class="time-select" id="fEnd_wrap"></div></div>
       <div class="full"><label>備註（預約提醒、雜事等，選填）</label>
         <textarea id="fNote" rows="2" placeholder="例如：14:00 王小姐體驗課"></textarea>
       </div>
@@ -406,7 +414,7 @@ let editingSlot = null; // {id, staff_id, date} when editing existing
 const typeColor = {
   "上班":"var(--c-work)", "休假":"var(--c-off)", "客戶上課":"var(--c-class)",
   "顧櫃檯":"var(--c-desk)", "吃飯":"var(--c-meal)", "特休":"var(--c-annual)",
-  "補休":"var(--c-comp)", "備註":"var(--c-note)"
+  "補休":"var(--c-comp)", "備註":"var(--c-note)", "加班":"var(--c-ot)"
 };
 
 function toast(msg){
@@ -417,6 +425,26 @@ function toast(msg){
 
 function localISO(d){
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function buildTimeSelect(wrapId){
+  const wrap = document.getElementById(wrapId);
+  let hOpts = ''; for(let h=0; h<24; h++){ const hh=String(h).padStart(2,'0'); hOpts += `<option value="${hh}">${hh}</option>`; }
+  let mOpts = ''; ['00','15','30','45'].forEach(mm=> mOpts += `<option value="${mm}">${mm}</option>`);
+  wrap.innerHTML = `<select class="th">${hOpts}</select><span>:</span><select class="tm">${mOpts}</select>`;
+}
+
+function getTimeVal(wrapId){
+  const wrap = document.getElementById(wrapId);
+  return wrap.querySelector('.th').value + ':' + wrap.querySelector('.tm').value;
+}
+
+function setTimeVal(wrapId, val){
+  const [h, m] = val.split(':');
+  const wrap = document.getElementById(wrapId);
+  wrap.querySelector('.th').value = h;
+  const snapped = String(Math.round(parseInt(m,10)/15)*15 % 60).padStart(2,'0');
+  wrap.querySelector('.tm').value = snapped;
 }
 
 function init(){
@@ -463,6 +491,9 @@ function init(){
     const el = document.createElement('div'); el.className='cal-dow'; el.textContent=d;
     dow.appendChild(el);
   });
+
+  buildTimeSelect('fStart_wrap');
+  buildTimeSelect('fEnd_wrap');
 }
 
 async function loadAll(){
@@ -735,16 +766,16 @@ function openSlotSheet(staff, iso, preset){
   }
 
   document.getElementById('fType').value = preset.type || '上班';
-  document.getElementById('fStart').value = defStart;
-  document.getElementById('fEnd').value = defEnd;
+  setTimeVal('fStart_wrap', defStart);
+  setTimeVal('fEnd_wrap', defEnd);
   document.getElementById('fNote').value = preset.note || '';
   document.getElementById('slotSheet').classList.add('show');
 }
 
 async function saveSlot(){
   const type = document.getElementById('fType').value;
-  const start = document.getElementById('fStart').value;
-  const end = document.getElementById('fEnd').value;
+  const start = getTimeVal('fStart_wrap');
+  const end = getTimeVal('fEnd_wrap');
   const note = document.getElementById('fNote').value.trim();
   if(start >= end){ toast('結束時間要晚於開始時間'); return; }
 
