@@ -399,8 +399,8 @@
 
 <script>
 /* ===================== 設定區：換成你自己的 Supabase 專案 ===================== */
-const SUPABASE_URL = "https://tzavwgovtweszmmchvdg.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR6YXZ3Z292dHdlc3ptbWNodmRnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM1ODM1NTcsImV4cCI6MjA5OTE1OTU1N30.qNGOcilLiitMgcEumqkrPa3Gk9pyEbPiyimgjsQpr1s";
+const SUPABASE_URL = "https://kdfsgguyaxrbyctxnlih.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_MCjbNZmcI0LVmDjGOqUosg_6vnxDeJv";
 /* ================================================================= */
 
 let sb = null;
@@ -452,7 +452,7 @@ function init(){
   viewYear = today.getFullYear(); viewMonth = today.getMonth();
 
   if(!SUPABASE_URL.includes("YOUR-PROJECT")){
-    sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { db: { schema: "schedule" } });
     document.getElementById('headerSub').textContent = "點日期即可排班，全店共用同一份";
     loadAll();
   } else {
