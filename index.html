@@ -756,7 +756,13 @@ function renderCoverageBar(iso){
 
 function openSlotSheet(staff, iso, preset){
   preset = preset || {};
-  editingSlot = {staff_id: staff.id, date: iso, id: preset.id || null};
+  const isEditingExisting = !!preset.id;
+  editingSlot = {
+    staff_id: staff.id, date: iso, id: preset.id || null,
+    oldType: isEditingExisting ? (preset.type || null) : null,
+    oldStart: isEditingExisting ? (preset.start || null) : null,
+    oldEnd: isEditingExisting ? (preset.end || null) : null
+  };
 
   let defStart = preset.start, defEnd = preset.end;
   if(!defStart || !defEnd){
@@ -770,6 +776,23 @@ function openSlotSheet(staff, iso, preset){
   setTimeVal('fEnd_wrap', defEnd);
   document.getElementById('fNote').value = preset.note || '';
   document.getElementById('slotSheet').classList.add('show');
+}
+
+function hoursBetween(start, end){
+  const [sh,sm] = start.split(':').map(Number);
+  const [eh,em] = end.split(':').map(Number);
+  return ((eh*60+em) - (sh*60+sm)) / 60;
+}
+
+async function adjustCompRemaining(staffId, deltaHours){
+  if(!deltaHours) return;
+  const {data} = await sb.from('leave_balance').select('comp_remaining').eq('staff_id', staffId).maybeSingle();
+  const current = data ? Number(data.comp_remaining)||0 : 0;
+  const {error} = await sb.from('leave_balance').upsert(
+    {staff_id: staffId, comp_remaining: current + deltaHours},
+    {onConflict:'staff_id'}
+  );
+  if(error) console.error(error);
 }
 
 async function saveSlot(){
@@ -793,12 +816,18 @@ async function saveSlot(){
   }
   if(error){ toast('儲存失敗'); console.error(error); return; }
 
+  // 排「加班」自動加進補休剩餘時數；若原本是加班、改成別的類型或改了時數，一併校正
+  let compDelta = 0;
+  if(type==='加班') compDelta += hoursBetween(start, end);
+  if(editingSlot.oldType==='加班') compDelta -= hoursBetween(editingSlot.oldStart, editingSlot.oldEnd);
+  if(compDelta !== 0) await adjustCompRemaining(editingSlot.staff_id, compDelta);
+
   closeSheet('slotSheet');
   await loadMonthSchedule();
   renderCalendar();
   renderAgenda();
   openDaySheet(editingSlot.date);
-  if(type==='特休' || type==='補休' || type==='加班') renderBalanceList();
+  if(type==='特休' || type==='補休' || type==='加班' || editingSlot.oldType==='加班') renderBalanceList();
   toast('已儲存');
 }
 
@@ -806,6 +835,9 @@ async function deleteSlot(id, iso){
   const row = (scheduleMap[iso]||[]).find(r=>r.id===id);
   const {error} = await sb.from('schedule').delete().eq('id', id);
   if(error){ toast('刪除失敗'); console.error(error); return; }
+  if(row && row.type==='加班'){
+    await adjustCompRemaining(row.staff_id, -hoursBetween(row.start_time.slice(0,5), row.end_time.slice(0,5)));
+  }
   await loadMonthSchedule();
   renderCalendar();
   renderAgenda();
